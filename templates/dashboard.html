@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Puntboom - Dashboard{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+    <h1 class="text-3xl font-bold mb-2">Dashboard</h1>
+    <p class="text-gray-400">Overview of predictions across all sports</p>
+</div>
+
+<!-- Sport Cards -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+    {% for sport in sports %}
+    <a href="/sport/{{ sport.key }}" class="bg-gray-900 rounded-xl border border-gray-800 p-6 hover:border-emerald-500 transition group">
+        <div class="flex items-center justify-between mb-4">
+            <span class="text-3xl">{{ sport.icon }}</span>
+            <span class="text-xs text-gray-500 group-hover:text-emerald-400 transition">View &rarr;</span>
+        </div>
+        <h3 class="text-lg font-semibold mb-2">{{ sport.name }}</h3>
+        {% set stats = sport_stats.get(sport.key, {}) %}
+        <div class="space-y-1 text-sm">
+            <div class="flex justify-between">
+                <span class="text-gray-400">Total Predictions</span>
+                <span class="font-mono">{{ stats.get('total', 0) }}</span>
+            </div>
+            <div class="flex justify-between">
+                <span class="text-gray-400">Correct</span>
+                <span class="font-mono text-emerald-400">{{ stats.get('correct', 0) }}</span>
+            </div>
+            <div class="flex justify-between">
+                <span class="text-gray-400">Accuracy</span>
+                <span class="font-mono">{{ stats.get('accuracy', 'N/A') }}</span>
+            </div>
+            <div class="flex justify-between">
+                <span class="text-gray-400">O/U Accuracy</span>
+                <span class="font-mono text-orange-400">{{ stats.get('ou_accuracy', 'N/A') }}</span>
+            </div>
+        </div>
+    </a>
+    {% endfor %}
+</div>
+
+<!-- Value Bets Table -->
+<div class="bg-gray-900 rounded-xl border border-gray-800 p-6">
+    <h2 class="text-xl font-semibold mb-4">Top Value Bets</h2>
+    {% if value_bets %}
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="text-gray-400 border-b border-gray-800">
+                    <th class="text-left py-3 px-2">Sport</th>
+                    <th class="text-left py-3 px-2">Match</th>
+                    <th class="text-left py-3 px-2">Date</th>
+                    <th class="text-left py-3 px-2">Prediction</th>
+                    <th class="text-right py-3 px-2">Confidence</th>
+                    <th class="text-right py-3 px-2">EV</th>
+                    <th class="text-right py-3 px-2">Kelly Stake</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for bet in value_bets %}
+                <tr class="border-b border-gray-800/50 hover:bg-gray-800/30">
+                    <td class="py-3 px-2 capitalize">{{ bet.sport }}</td>
+                    <td class="py-3 px-2">{{ bet.home_team }} vs {{ bet.away_team }}</td>
+                    <td class="py-3 px-2 text-gray-400">{{ bet.match_date.strftime('%Y-%m-%d %H:%M') if bet.match_date else 'TBD' }}</td>
+                    <td class="py-3 px-2">
+                        <span class="px-2 py-1 rounded text-xs font-medium
+                            {% if bet.predicted_outcome in ['H', '1'] %}bg-blue-500/20 text-blue-400
+                            {% elif bet.predicted_outcome == 'D' %}bg-yellow-500/20 text-yellow-400
+                            {% else %}bg-red-500/20 text-red-400{% endif %}">
+                            {{ bet.predicted_outcome }}
+                        </span>
+                    </td>
+                    <td class="py-3 px-2 text-right font-mono">{{ "%.1f" | format(bet.confidence * 100) }}%</td>
+                    <td class="py-3 px-2 text-right font-mono text-emerald-400">+{{ "%.1f" | format((bet.expected_value or 0) * 100) }}%</td>
+                    <td class="py-3 px-2 text-right font-mono">${{ "%.2f" | format(bet.kelly_stake or 0) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="text-gray-500 text-center py-8">No value bets found. Collect data and train models to generate predictions.</p>
+    {% endif %}
+</div>
+{% endblock %}

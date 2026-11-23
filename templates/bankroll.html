@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Puntboom - Bankroll{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+    <h1 class="text-3xl font-bold mb-2">Bankroll Manager</h1>
+    <p class="text-gray-400">Track performance and get bet recommendations</p>
+</div>
+
+<div x-data="bankrollApp()" x-init="init()">
+    <!-- Bankroll Input -->
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-6 mb-6">
+        <div class="flex flex-wrap gap-4 items-end">
+            <div>
+                <label class="text-xs text-gray-400 block mb-1">Bankroll ($)</label>
+                <input type="number" x-model.number="bankroll" class="bg-gray-800 border border-gray-700 rounded px-3 py-2 w-40 font-mono" min="1">
+            </div>
+            <button @click="fetchRecommendations()" class="bg-emerald-600 hover:bg-emerald-500 px-4 py-2 rounded text-sm font-medium transition">
+                Get Recommendations
+            </button>
+        </div>
+    </div>
+
+    <!-- Summary Stats -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <div class="bg-gray-900 rounded-xl border border-gray-800 p-4">
+            <span class="text-xs text-gray-400">Total Staked</span>
+            <p class="text-xl font-mono font-bold" x-text="'$' + summary.total_staked.toFixed(2)">$0.00</p>
+        </div>
+        <div class="bg-gray-900 rounded-xl border border-gray-800 p-4">
+            <span class="text-xs text-gray-400">Total Return</span>
+            <p class="text-xl font-mono font-bold text-emerald-400" x-text="'$' + summary.total_return.toFixed(2)">$0.00</p>
+        </div>
+        <div class="bg-gray-900 rounded-xl border border-gray-800 p-4">
+            <span class="text-xs text-gray-400">Profit/Loss</span>
+            <p class="text-xl font-mono font-bold" :class="summary.profit >= 0 ? 'text-emerald-400' : 'text-red-400'" x-text="'$' + summary.profit.toFixed(2)">$0.00</p>
+        </div>
+        <div class="bg-gray-900 rounded-xl border border-gray-800 p-4">
+            <span class="text-xs text-gray-400">ROI</span>
+            <p class="text-xl font-mono font-bold" :class="summary.roi >= 0 ? 'text-emerald-400' : 'text-red-400'" x-text="(summary.roi * 100).toFixed(1) + '%'">0.0%</p>
+        </div>
+    </div>
+
+    <!-- P&L Chart -->
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-6 mb-6">
+        <h3 class="text-lg font-semibold mb-4">Cumulative P&L</h3>
+        <canvas id="pnl-chart" height="250"></canvas>
+    </div>
+
+    <!-- Recommendations Table -->
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-6">
+        <h3 class="text-lg font-semibold mb-4">Bet Recommendations</h3>
+        <template x-if="recommendations.length > 0">
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="text-gray-400 border-b border-gray-800">
+                            <th class="text-left py-3 px-2">Sport</th>
+                            <th class="text-left py-3 px-2">Match</th>
+                            <th class="text-center py-3 px-2">Pick</th>
+                            <th class="text-right py-3 px-2">Prob</th>
+                            <th class="text-right py-3 px-2">Odds</th>
+                            <th class="text-right py-3 px-2">EV</th>
+                            <th class="text-right py-3 px-2">Stake</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <template x-for="rec in recommendations" :key="rec.match">
+                            <tr class="border-b border-gray-800/50 hover:bg-gray-800/30">
+                                <td class="py-3 px-2 capitalize" x-text="rec.sport"></td>
+                                <td class="py-3 px-2" x-text="rec.match"></td>
+                                <td class="py-3 px-2 text-center font-mono" x-text="rec.outcome"></td>
+                                <td class="py-3 px-2 text-right font-mono" x-text="(rec.probability * 100).toFixed(1) + '%'"></td>
+                                <td class="py-3 px-2 text-right font-mono" x-text="rec.odds.toFixed(2)"></td>
+                                <td class="py-3 px-2 text-right font-mono text-emerald-400" x-text="'+' + (rec.expected_value * 100).toFixed(1) + '%'"></td>
+                                <td class="py-3 px-2 text-right font-mono font-bold" x-text="'$' + rec.stake_amount.toFixed(2)"></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+        </template>
+        <template x-if="recommendations.length === 0">
+            <p class="text-gray-500 text-center py-8">No recommendations available. Generate predictions first.</p>
+        </template>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/bankroll.js"></script>
+{% endblock %}

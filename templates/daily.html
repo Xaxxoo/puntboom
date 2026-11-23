@@ -1,0 +1,286 @@
+{% extends "base.html" %}
+{% block title %}Puntboom - Daily Picks{% endblock %}
+
+{% macro outcome_label(pred) -%}
+    {%- if pred.predicted_outcome == 'H' -%}{{ pred.home_team }}
+    {%- elif pred.predicted_outcome == 'A' -%}{{ pred.away_team }}
+    {%- elif pred.predicted_outcome == 'D' -%}Draw
+    {%- elif pred.predicted_outcome == '1' -%}{{ pred.home_team }}
+    {%- elif pred.predicted_outcome == '2' -%}{{ pred.away_team }}
+    {%- else -%}{{ pred.predicted_outcome }}
+    {%- endif -%}
+{%- endmacro %}
+
+{% macro match_row(pred, show_date=false) %}
+<tr class="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors"
+    data-time="{{ pred.match_date.strftime('%Y%m%d%H%M') if pred.match_date else '0' }}"
+    data-confidence="{{ pred.confidence }}"
+    data-xgoals="{{ pred.expected_goals or 0 }}"
+    data-league="{{ pred.league or '' }}">
+    <td class="py-3 px-2 font-mono text-gray-400 text-xs whitespace-nowrap">
+        {% if show_date %}{{ pred.match_date.strftime('%a %d') }}<br>{% endif %}{{ pred.match_date.strftime('%H:%M') if pred.match_date else 'TBD' }}
+    </td>
+    <td class="py-3 px-2">
+        <div class="flex items-center gap-1 flex-wrap">
+            <span class="font-medium {% if pred.predicted_outcome in ['H', '1'] %}text-white{% else %}text-gray-300{% endif %}">{{ pred.home_team }}</span>
+            <span class="text-gray-500 mx-1">v</span>
+            <span class="font-medium {% if pred.predicted_outcome in ['A', '2'] %}text-white{% else %}text-gray-300{% endif %}">{{ pred.away_team }}</span>
+        </div>
+        {% if pred.home_avg_scored is not none and pred.away_avg_scored is not none %}
+        <div class="flex gap-4 mt-0.5">
+            <span class="text-[10px] text-gray-500 font-mono">{{ "%.1f"|format(pred.home_avg_scored) }} GF / {{ "%.1f"|format(pred.home_avg_conceded or 0) }} GA</span>
+            <span class="text-[10px] text-gray-500 font-mono">{{ "%.1f"|format(pred.away_avg_scored) }} GF / {{ "%.1f"|format(pred.away_avg_conceded or 0) }} GA</span>
+        </div>
+        {% endif %}
+    </td>
+    <td class="py-3 px-2 text-gray-500 text-xs hidden sm:table-cell">{{ pred.league or '-' }}</td>
+    <td class="py-3 px-2">
+        <span class="inline-flex items-center px-2 py-1 rounded text-xs font-semibold
+            {% if pred.predicted_outcome in ['H', '1'] %}bg-blue-500/20 text-blue-400
+            {% elif pred.predicted_outcome == 'D' %}bg-yellow-500/20 text-yellow-400
+            {% else %}bg-red-500/20 text-red-400{% endif %}">
+            {{ outcome_label(pred) }}
+        </span>
+    </td>
+    <td class="py-3 px-2 text-center">
+        {% set conf = (pred.confidence * 100) | int %}
+        <span class="font-mono text-xs font-bold
+            {% if conf >= 60 %}text-emerald-400
+            {% elif conf >= 45 %}text-yellow-400
+            {% else %}text-gray-400{% endif %}">{{ conf }}%</span>
+    </td>
+    <!-- Expected Goals (prominent) -->
+    <td class="py-3 px-2 text-center">
+        {% if pred.expected_goals %}
+        <span class="font-mono text-sm font-bold text-white">{{ "%.1f" | format(pred.expected_goals) }}</span>
+        {% else %}
+        <span class="text-gray-600">-</span>
+        {% endif %}
+    </td>
+    <!-- O/U 2.5 prediction -->
+    <td class="py-3 px-2 text-center">
+        {% set ou_line = pred.total_line or 2.5 %}
+        {% if pred.predicted_total == 'Over' %}
+            {% set ou_conf = ((pred.prob_over or 0) * 100) | int %}
+            <div class="flex flex-col items-center gap-0.5">
+                <span class="px-2 py-0.5 rounded text-xs font-bold bg-orange-500/20 text-orange-400">OVR {{ "%.1f"|format(ou_line) }}</span>
+                <span class="font-mono text-[10px] text-orange-400/70">{{ ou_conf }}%</span>
+            </div>
+        {% elif pred.predicted_total == 'Under' %}
+            {% set ou_conf = ((pred.prob_under or 0) * 100) | int %}
+            <div class="flex flex-col items-center gap-0.5">
+                <span class="px-2 py-0.5 rounded text-xs font-bold bg-cyan-500/20 text-cyan-400">UND {{ "%.1f"|format(ou_line) }}</span>
+                <span class="font-mono text-[10px] text-cyan-400/70">{{ ou_conf }}%</span>
+            </div>
+        {% else %}
+            <span class="text-gray-600">-</span>
+        {% endif %}
+    </td>
+    <td class="py-3 px-2 text-center hidden md:table-cell">
+        {% if pred.prob_over and pred.prob_under %}
+        <div class="w-16 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+            <div class="h-full bg-orange-400 rounded-full" style="width: {{ (pred.prob_over * 100) | int }}%"></div>
+        </div>
+        {% endif %}
+    </td>
+    <td class="py-3 px-2 text-center">
+        {% if pred.is_value_bet %}
+        <span class="px-2 py-0.5 rounded text-xs font-bold bg-emerald-500/20 text-emerald-400">VALUE</span>
+        {% endif %}
+    </td>
+</tr>
+{% endmacro %}
+
+{% macro table_head() %}
+<thead>
+    <tr class="text-gray-400 border-b border-gray-800 text-xs uppercase tracking-wider">
+        <th class="text-left py-3 px-2 cursor-pointer hover:text-white select-none" data-sort="time">Time <span class="sort-arrow"></span></th>
+        <th class="text-left py-3 px-2">Match</th>
+        <th class="text-left py-3 px-2 hidden sm:table-cell cursor-pointer hover:text-white select-none" data-sort="league">League <span class="sort-arrow"></span></th>
+        <th class="text-left py-3 px-2">Winner</th>
+        <th class="text-center py-3 px-2 cursor-pointer hover:text-white select-none" data-sort="confidence">Conf <span class="sort-arrow"></span></th>
+        <th class="text-center py-3 px-2 cursor-pointer hover:text-white select-none" data-sort="xgoals">xGoals <span class="sort-arrow"></span></th>
+        <th class="text-center py-3 px-2">O/U</th>
+        <th class="text-center py-3 px-2 hidden md:table-cell">O/U Bar</th>
+        <th class="text-center py-3 px-2"></th>
+    </tr>
+</thead>
+{% endmacro %}
+
+{% set total_picks = today_count + tomorrow_count + upcoming_count %}
+
+{% block content %}
+<div class="mb-8">
+    <h1 class="text-3xl font-bold mb-1">Daily Picks</h1>
+    <p class="text-gray-400">Model-generated predictions with expected goals &mdash; {{ total_picks }} picks this week</p>
+</div>
+
+<!-- Week at a Glance Summary -->
+<div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
+    <div class="bg-gray-900 rounded-lg border border-gray-800 p-4 text-center">
+        <div class="text-2xl font-bold text-emerald-400">{{ today_count }}</div>
+        <div class="text-xs text-gray-500 mt-1">Today</div>
+    </div>
+    <div class="bg-gray-900 rounded-lg border border-gray-800 p-4 text-center">
+        <div class="text-2xl font-bold text-gray-300">{{ tomorrow_count }}</div>
+        <div class="text-xs text-gray-500 mt-1">Tomorrow</div>
+    </div>
+    <div class="bg-gray-900 rounded-lg border border-gray-800 p-4 text-center">
+        <div class="text-2xl font-bold text-gray-300">{{ upcoming_count }}</div>
+        <div class="text-xs text-gray-500 mt-1">Rest of Week</div>
+    </div>
+    <div class="bg-gray-900 rounded-lg border border-gray-800 p-4 text-center">
+        <div class="text-2xl font-bold text-white">{{ total_picks }}</div>
+        <div class="text-xs text-gray-500 mt-1">Total</div>
+    </div>
+</div>
+
+<!-- Today's Picks -->
+<div class="mb-8">
+    <div class="flex items-center gap-3 mb-3">
+        <h2 class="text-xl font-bold text-emerald-400">Today</h2>
+        <span class="text-sm text-gray-500 font-mono">{{ today_date.strftime('%A, %B %d') }}</span>
+        <span class="ml-auto px-3 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-400">{{ today_count }} pick{{ 's' if today_count != 1 else '' }}</span>
+    </div>
+
+    {% if today %}
+    {% for sport_key, picks in today.items() %}
+    {% set sport_info = sports | selectattr('key', 'equalto', sport_key) | first %}
+    <div class="bg-gray-900 rounded-xl border border-emerald-500/30 p-5 mb-3">
+        <h3 class="text-sm font-semibold mb-3 text-emerald-300">{{ sport_info.icon if sport_info else '' }} {{ sport_key | capitalize }}</h3>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                {{ table_head() }}
+                <tbody>
+                    {% for pred in picks %}
+                    {{ match_row(pred) }}
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-6 text-center">
+        <p class="text-gray-500">No matches scheduled today &mdash; see the week ahead below.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Tomorrow's Picks -->
+<div class="mb-8">
+    <div class="flex items-center gap-3 mb-3">
+        <h2 class="text-xl font-bold text-gray-300">Tomorrow</h2>
+        <span class="text-sm text-gray-500 font-mono">{{ tomorrow_date.strftime('%A, %B %d') }}</span>
+        <span class="ml-auto px-3 py-1 rounded-full text-xs font-bold bg-gray-700 text-gray-300">{{ tomorrow_count }}</span>
+    </div>
+
+    {% if tomorrow %}
+    {% for sport_key, picks in tomorrow.items() %}
+    {% set sport_info = sports | selectattr('key', 'equalto', sport_key) | first %}
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-5 mb-3">
+        <h3 class="text-sm font-semibold mb-3 text-gray-400">{{ sport_info.icon if sport_info else '' }} {{ sport_key | capitalize }}</h3>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                {{ table_head() }}
+                <tbody>
+                    {% for pred in picks %}
+                    {{ match_row(pred) }}
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="bg-gray-900 rounded-xl border border-gray-800/60 p-5 text-center">
+        <p class="text-gray-600 text-sm">No matches tomorrow.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Upcoming This Week -->
+{% if upcoming %}
+<div>
+    <div class="flex items-center gap-3 mb-3">
+        <h2 class="text-xl font-bold text-gray-300">This Week</h2>
+        <span class="ml-auto px-3 py-1 rounded-full text-xs font-bold bg-gray-800 text-gray-400">{{ upcoming_count }} picks</span>
+    </div>
+
+    {% for day_label, picks in upcoming.items() %}
+    <div class="mb-4">
+        <div class="flex items-center gap-2 mb-2">
+            <h3 class="text-sm font-semibold text-gray-400">{{ day_label }}</h3>
+            <span class="text-xs text-gray-600">({{ picks | length }})</span>
+        </div>
+        <div class="bg-gray-900 rounded-xl border border-gray-800/50 p-5">
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    {{ table_head() }}
+                    <tbody>
+                        {% for pred in picks %}
+                        {{ match_row(pred) }}
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+{% if total_picks == 0 %}
+<div class="bg-gray-900 rounded-xl border border-gray-800 p-12 text-center">
+    <p class="text-gray-400 text-lg mb-2">No predictions available yet.</p>
+    <p class="text-gray-600 text-sm">Predictions are generated automatically when match data and trained models are available.</p>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('th[data-sort]').forEach(function(th) {
+        th.addEventListener('click', function() {
+            var table = th.closest('table');
+            var tbody = table.querySelector('tbody');
+            var rows = Array.from(tbody.querySelectorAll('tr'));
+            var key = th.dataset.sort;
+            var arrow = th.querySelector('.sort-arrow');
+
+            // Determine direction: toggle between desc/asc
+            var currentDir = th.dataset.dir || 'none';
+            var newDir = currentDir === 'desc' ? 'asc' : 'desc';
+            th.dataset.dir = newDir;
+
+            // Clear all arrows in this table head
+            table.querySelectorAll('th[data-sort]').forEach(function(h) {
+                h.querySelector('.sort-arrow').textContent = '';
+                if (h !== th) h.dataset.dir = 'none';
+            });
+            arrow.textContent = newDir === 'desc' ? ' \u25BC' : ' \u25B2';
+
+            rows.sort(function(a, b) {
+                var aVal = a.dataset[key] || '';
+                var bVal = b.dataset[key] || '';
+
+                // Numeric sort for confidence, xgoals, time
+                if (key === 'confidence' || key === 'xgoals' || key === 'time') {
+                    aVal = parseFloat(aVal) || 0;
+                    bVal = parseFloat(bVal) || 0;
+                    return newDir === 'desc' ? bVal - aVal : aVal - bVal;
+                }
+                // String sort for league
+                return newDir === 'desc'
+                    ? bVal.localeCompare(aVal)
+                    : aVal.localeCompare(bVal);
+            });
+
+            rows.forEach(function(row) { tbody.appendChild(row); });
+        });
+    });
+});
+</script>
+{% endblock %}

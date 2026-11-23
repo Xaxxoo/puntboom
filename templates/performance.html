@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Puntboom - Performance{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+    <h1 class="text-3xl font-bold mb-2">Model Performance</h1>
+    <p class="text-gray-400">Accuracy, calibration, and ROI metrics</p>
+</div>
+
+<!-- Performance Cards -->
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+    {% for sport in sports %}
+    {% set perf = sport_perf.get(sport.key, {}) %}
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-6">
+        <h3 class="text-lg font-semibold mb-4">{{ sport.icon }} {{ sport.name }}</h3>
+        <div class="space-y-3">
+            <div>
+                <span class="text-xs text-gray-400">Predictions</span>
+                <p class="text-2xl font-mono font-bold">{{ perf.get('total', 0) }}</p>
+            </div>
+            <div>
+                <span class="text-xs text-gray-400">Accuracy</span>
+                <p class="text-2xl font-mono font-bold text-emerald-400">{{ "%.1f" | format(perf.get('accuracy', 0) * 100) }}%</p>
+            </div>
+            <div class="w-full bg-gray-800 rounded-full h-2">
+                <div class="bg-emerald-500 h-2 rounded-full" style="width: {{ (perf.get('accuracy', 0) * 100)|int }}%"></div>
+            </div>
+            <div>
+                <span class="text-xs text-gray-400">O/U Accuracy</span>
+                <p class="text-2xl font-mono font-bold text-orange-400">{{ "%.1f" | format(perf.get('ou_accuracy', 0) * 100) }}%</p>
+            </div>
+            <div class="w-full bg-gray-800 rounded-full h-2">
+                <div class="bg-orange-500 h-2 rounded-full" style="width: {{ (perf.get('ou_accuracy', 0) * 100)|int }}%"></div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Charts -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-6">
+        <h3 class="text-lg font-semibold mb-4">Accuracy by Sport</h3>
+        <canvas id="accuracy-chart" height="300"></canvas>
+    </div>
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-6">
+        <h3 class="text-lg font-semibold mb-4">Calibration</h3>
+        <canvas id="calibration-chart" height="300"></canvas>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const sportData = {{ sport_perf | tojson }};
+
+    // Accuracy bar chart
+    const labels = Object.keys(sportData);
+    const accuracies = labels.map(k => (sportData[k].accuracy * 100).toFixed(1));
+    const ouAccuracies = labels.map(k => (sportData[k].ou_accuracy * 100).toFixed(1));
+
+    if (document.getElementById('accuracy-chart')) {
+        createBarChart('accuracy-chart', {
+            labels: labels.map(l => l.charAt(0).toUpperCase() + l.slice(1)),
+            datasets: [{
+                label: 'Match Accuracy %',
+                data: accuracies,
+                backgroundColor: ['#3b82f6', '#f59e0b', '#06b6d4', '#10b981'],
+                borderRadius: 8,
+            }, {
+                label: 'O/U Accuracy %',
+                data: ouAccuracies,
+                backgroundColor: ['#3b82f680', '#f59e0b80', '#06b6d480', '#10b98180'],
+                borderRadius: 8,
+            }]
+        }, { y: { max: 100, beginAtZero: true } });
+    }
+
+    // Calibration chart (placeholder diagonal)
+    if (document.getElementById('calibration-chart')) {
+        const perfect = Array.from({length: 11}, (_, i) => i * 10);
+        createLineChart('calibration-chart', {
+            labels: perfect,
+            datasets: [{
+                label: 'Perfect calibration',
+                data: perfect,
+                borderColor: '#6b7280',
+                borderDash: [5, 5],
+                pointRadius: 0,
+                fill: false,
+            }]
+        }, {
+            x: { title: { display: true, text: 'Predicted Probability (%)' }},
+            y: { title: { display: true, text: 'Actual Frequency (%)' }, max: 100, beginAtZero: true },
+        });
+    }
+});
+</script>
+{% endblock %}

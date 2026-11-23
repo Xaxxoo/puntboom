@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Puntboom{% endblock %}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        dark: { 800: '#1a1a2e', 900: '#0f0f23', 700: '#16213e' },
+                        accent: { 400: '#e94560', 500: '#c81e45' },
+                        success: { 400: '#10b981', 500: '#059669' },
+                        warn: { 400: '#f59e0b' },
+                    }
+                }
+            }
+        }
+    </script>
+    <link rel="stylesheet" href="/static/css/custom.css">
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+    <!-- Navigation -->
+    <nav class="bg-gray-900 border-b border-gray-800 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center space-x-8">
+                    <a href="/" class="text-2xl font-bold text-emerald-400">Puntboom</a>
+                    <div class="hidden md:flex space-x-4">
+                        <a href="/" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-800 hover:text-white transition">Dashboard</a>
+                        <a href="/daily" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-800 hover:text-white transition text-emerald-400">Daily Picks</a>
+                        {% for sport in sports %}
+                        <a href="/sport/{{ sport.key }}" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-800 hover:text-white transition">
+                            <span>{{ sport.icon }}</span> {{ sport.name }}
+                        </a>
+                        {% endfor %}
+                        <a href="/predictions" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-800 hover:text-white transition">Predictions</a>
+                        <a href="/performance" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-800 hover:text-white transition">Performance</a>
+                        <a href="/bankroll" class="px-3 py-2 rounded-md text-sm font-medium hover:bg-gray-800 hover:text-white transition">Bankroll</a>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <a href="/api/docs" target="_blank" class="text-xs text-gray-400 hover:text-white">API Docs</a>
+                </div>
+            </div>
+        </div>
+        <!-- Mobile nav -->
+        <div class="md:hidden px-4 pb-3" x-data="{ open: false }">
+            <button @click="open = !open" class="text-gray-400 hover:text-white">Menu</button>
+            <div x-show="open" class="mt-2 space-y-1">
+                <a href="/" class="block px-3 py-2 rounded-md text-sm hover:bg-gray-800">Dashboard</a>
+                <a href="/daily" class="block px-3 py-2 rounded-md text-sm hover:bg-gray-800 text-emerald-400">Daily Picks</a>
+                {% for sport in sports %}
+                <a href="/sport/{{ sport.key }}" class="block px-3 py-2 rounded-md text-sm hover:bg-gray-800">{{ sport.icon }} {{ sport.name }}</a>
+                {% endfor %}
+                <a href="/predictions" class="block px-3 py-2 rounded-md text-sm hover:bg-gray-800">Predictions</a>
+                <a href="/performance" class="block px-3 py-2 rounded-md text-sm hover:bg-gray-800">Performance</a>
+                <a href="/bankroll" class="block px-3 py-2 rounded-md text-sm hover:bg-gray-800">Bankroll</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-gray-900 border-t border-gray-800 mt-12 py-6">
+        <div class="max-w-7xl mx-auto px-4 text-center text-gray-500 text-sm">
+            Puntboom &mdash; Sports Betting Prediction Platform
+        </div>
+    </footer>
+
+    <script src="/static/js/charts.js"></script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

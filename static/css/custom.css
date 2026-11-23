@@ -1,0 +1,41 @@
+/* Puntboom custom styles */
+
+/* Smooth scrolling */
+html {
+    scroll-behavior: smooth;
+}
+
+/* Table row hover effect */
+tbody tr {
+    transition: background-color 0.15s ease;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+::-webkit-scrollbar-track {
+    background: #1f2937;
+}
+::-webkit-scrollbar-thumb {
+    background: #4b5563;
+    border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: #6b7280;
+}
+
+/* Chart container */
+canvas {
+    max-width: 100%;
+}
+
+/* Value badge pulse */
+@keyframes pulse-green {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+.value-pulse {
+    animation: pulse-green 2s ease-in-out infinite;
+}
