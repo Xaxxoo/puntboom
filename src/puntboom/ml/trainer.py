@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.linear_model import LogisticRegression, Ridge
-from sklearn.metrics import mean_absolute_error
+from sklearn.metrics import accuracy_score, brier_score_loss, log_loss, mean_absolute_error
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import StandardScaler
 
@@ -291,4 +291,146 @@ def train_totals_model(
             "std_total_goals": std_total,
         },
         "cv_results": {k: {"avg_mae": v["avg_mae"]} for k, v in results.items()},
+    }
+
+
+def _build_classifier_models() -> dict:
+    """Build candidate binary classifiers for O/U prediction."""
+    models = {
+        "logistic": LogisticRegression(max_iter=1000),
+    }
+    if XGBClassifier is not None:
+        models["xgboost"] = XGBClassifier(
+            n_estimators=200,
+            max_depth=6,
+            learning_rate=0.1,
+            objective="binary:logistic",
+            eval_metric="logloss",
+            verbosity=0,
+        )
+    if LGBMClassifier is not None:
+        models["lightgbm"] = LGBMClassifier(
+            n_estimators=200,
+            max_depth=6,
+            learning_rate=0.1,
+            objective="binary",
+            verbose=-1,
+        )
+    return models
+
+
+def train_totals_classifier(
+    sport: str,
+    features_df: pd.DataFrame,
+    labels: pd.Series,
+    line: float,
+) -> dict:
+    """Train a binary classifier on Over/Under labels.
+
+    Args:
+        sport: Sport name (e.g. "football", "hockey").
+        features_df: Feature DataFrame (same as regression).
+        labels: Numeric total goals (home_score + away_score).
+        line: The O/U line (e.g. 2.5 for football, 5.5 for hockey).
+
+    Returns dict with model metadata and metrics.
+    """
+    model_dir = settings.model_dir / sport
+    model_dir.mkdir(parents=True, exist_ok=True)
+
+    # Convert numeric totals to binary labels: 1 = Over, 0 = Under
+    y_raw = labels.dropna().astype(float)
+    y = (y_raw > line).astype(int)
+    X = features_df.loc[y.index]
+
+    if len(X) < 20:
+        logger.warning(f"Not enough O/U classifier data for {sport}: {len(X)} samples")
+        return {"sport": sport, "error": "insufficient_data", "samples": len(X)}
+
+    X = X.fillna(0)
+
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+
+    n_splits = min(5, max(2, len(X) // 20))
+    tscv = TimeSeriesSplit(n_splits=n_splits)
+
+    candidate_models = _build_classifier_models()
+    best_name = None
+    best_score = float("inf")
+    best_model = None
+    results = {}
+
+    for name, model in candidate_models.items():
+        try:
+            scores = []
+            for train_idx, val_idx in tscv.split(X_scaled):
+                model.fit(X_scaled[train_idx], y.iloc[train_idx])
+                proba = model.predict_proba(X_scaled[val_idx])[:, 1]
+                bs = brier_score_loss(y.iloc[val_idx], proba)
+                scores.append(bs)
+
+            avg_brier = np.mean(scores)
+            results[name] = {"avg_brier": avg_brier, "cv_scores": [float(s) for s in scores]}
+            logger.info(f"{sport}_totals_cls/{name}: avg Brier={avg_brier:.4f}")
+
+            if avg_brier < best_score:
+                best_score = avg_brier
+                best_name = name
+                best_model = model
+        except Exception:
+            logger.exception(f"Failed to train {sport}_totals_cls/{name}")
+
+    if best_model is None:
+        return {"sport": sport, "error": "all_models_failed"}
+
+    # Retrain best on all data
+    best_model.fit(X_scaled, y)
+
+    # Calibrate probabilities
+    calibrated = CalibratedClassifierCV(best_model, cv=3, method="isotonic")
+    try:
+        calibrated.fit(X_scaled, y)
+        final_model = calibrated
+    except Exception:
+        logger.warning(f"Calibration failed for {sport} O/U classifier, using uncalibrated")
+        final_model = best_model
+
+    # Save artifacts
+    version = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    joblib.dump(final_model, model_dir / f"totals_cls_model_{version}.joblib")
+    joblib.dump(scaler, model_dir / f"totals_cls_scaler_{version}.joblib")
+    joblib.dump(
+        {"feature_names": list(features_df.columns), "line": line},
+        model_dir / f"totals_cls_meta_{version}.joblib",
+    )
+
+    # Also save as "latest"
+    joblib.dump(final_model, model_dir / "totals_cls_model_latest.joblib")
+    joblib.dump(scaler, model_dir / "totals_cls_scaler_latest.joblib")
+    joblib.dump(
+        {"feature_names": list(features_df.columns), "line": line},
+        model_dir / "totals_cls_meta_latest.joblib",
+    )
+
+    # Final evaluation
+    final_proba = final_model.predict_proba(X_scaled)[:, 1]
+    final_preds = (final_proba >= 0.5).astype(int)
+    final_brier = brier_score_loss(y, final_proba)
+    final_acc = accuracy_score(y, final_preds)
+    over_rate = float(y.mean())
+
+    return {
+        "sport": sport,
+        "model_type": "totals_classifier",
+        "best_model": best_name,
+        "version": version,
+        "samples": len(X),
+        "line": line,
+        "metrics": {
+            "brier_score": float(final_brier),
+            "accuracy": float(final_acc),
+            "over_rate": over_rate,
+        },
+        "cv_results": {k: {"avg_brier": v["avg_brier"]} for k, v in results.items()},
     }

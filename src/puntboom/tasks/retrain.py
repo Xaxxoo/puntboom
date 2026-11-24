@@ -11,7 +11,7 @@ from puntboom.features.football import build_football_features, match_results_fo
 from puntboom.features.basketball import build_basketball_features
 from puntboom.features.hockey import build_hockey_features
 from puntboom.features.tennis import build_tennis_features
-from puntboom.ml.trainer import train_sport_model, train_totals_model
+from puntboom.ml.trainer import train_sport_model, train_totals_model, train_totals_classifier
 from puntboom.ml.registry import ModelRegistry
 from puntboom.models.football import FootballMatch, FootballTeam
 from puntboom.models.basketball import BasketballGame, BasketballTeam
@@ -82,6 +82,33 @@ async def retrain_all_models() -> dict:
             except Exception:
                 logger.exception(f"Failed to retrain {sport} totals")
                 results[f"{sport}_totals"] = {"error": "training_failed"}
+
+        # Train O/U binary classifiers
+        for sport, func, line in [
+            ("football", _build_football_totals_dataset, 2.5),
+            ("hockey", _build_hockey_totals_dataset, 5.5),
+        ]:
+            try:
+                features_df, labels = await func(session)
+                if features_df.empty:
+                    logger.warning(f"No O/U classifier data for {sport}")
+                    results[f"{sport}_totals_cls"] = {"error": "no_data"}
+                    continue
+
+                result = train_totals_classifier(sport, features_df, labels, line=line)
+                results[f"{sport}_totals_cls"] = result
+
+                if "version" in result:
+                    registry.register(
+                        sport=f"{sport}_totals_cls",
+                        version=result["version"],
+                        model_type=result.get("best_model", "unknown"),
+                        metrics=result.get("metrics", {}),
+                        sample_count=result.get("samples", 0),
+                    )
+            except Exception:
+                logger.exception(f"Failed to retrain {sport} O/U classifier")
+                results[f"{sport}_totals_cls"] = {"error": "training_failed"}
 
     logger.info("Finished model retraining")
     return results

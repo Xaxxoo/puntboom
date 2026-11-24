@@ -6,6 +6,7 @@ from pathlib import Path
 import joblib
 import numpy as np
 import pandas as pd
+from scipy.stats import poisson
 
 from puntboom.config import settings
 
@@ -131,7 +132,7 @@ class TotalsPredictor:
                   5.5 for hockey, etc.).
 
         Returns dict with 'expected_total', 'prob_over', 'prob_under'.
-        Uses a logistic approximation around the predicted mean.
+        Uses Poisson CDF for O/U probability estimation.
         """
         if not self._loaded:
             if not self.load():
@@ -145,16 +146,67 @@ class TotalsPredictor:
         # Clamp to reasonable range
         expected = max(0.0, min(expected, 15.0))
 
-        # Estimate O/U probability using logistic approximation
-        # Steepness factor based on typical goal variance (~1.3 std)
-        k = 1.8  # steepness — tuned so ~0.5 goals from line ≈ 70% confidence
-        prob_over = 1.0 / (1.0 + np.exp(-k * (expected - line)))
+        # Estimate O/U probability using Poisson CDF
+        # Poisson is the correct model for goal-scoring: variance = mean,
+        # so lower predicted totals naturally spread more probability below the line.
+        prob_over = 1.0 - poisson.cdf(int(line), expected)
         prob_under = 1.0 - prob_over
 
         return {
             "expected_total": round(expected, 2),
             "prob_over": round(float(prob_over), 3),
             "prob_under": round(float(prob_under), 3),
+        }
+
+
+class TotalsClassifier:
+    """Load a trained binary O/U classifier and predict over/under probabilities."""
+
+    def __init__(self, sport: str):
+        self.sport = sport
+        self.model = None
+        self.scaler = None
+        self.meta = None
+        self._loaded = False
+
+    def load(self, version: str = "latest") -> bool:
+        model_dir = settings.model_dir / self.sport
+        try:
+            self.model = joblib.load(model_dir / f"totals_cls_model_{version}.joblib")
+            self.scaler = joblib.load(model_dir / f"totals_cls_scaler_{version}.joblib")
+            self.meta = joblib.load(model_dir / f"totals_cls_meta_{version}.joblib")
+            self._loaded = True
+            logger.info(f"Loaded {self.sport} totals classifier (version={version})")
+            return True
+        except FileNotFoundError:
+            logger.warning(f"No totals classifier found for {self.sport} (version={version})")
+            return False
+
+    @property
+    def feature_names(self) -> list[str]:
+        return self.meta["feature_names"] if self.meta else []
+
+    def predict(self, features: dict[str, float]) -> dict[str, float] | None:
+        """Predict O/U probabilities for a single match.
+
+        Returns dict with 'prob_over' and 'prob_under'.
+        """
+        if not self._loaded:
+            if not self.load():
+                return None
+
+        feature_vector = [features.get(name, 0.0) for name in self.feature_names]
+        X = np.array([feature_vector])
+        X_scaled = self.scaler.transform(X)
+        proba = self.model.predict_proba(X_scaled)[0]
+
+        # Classes are [0=Under, 1=Over]
+        prob_over = float(proba[1])
+        prob_under = float(proba[0])
+
+        return {
+            "prob_over": round(prob_over, 3),
+            "prob_under": round(prob_under, 3),
         }
 
 

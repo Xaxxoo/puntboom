@@ -10,7 +10,7 @@ from puntboom.bankroll.kelly import fractional_kelly, kelly_stake_amount
 from puntboom.bankroll.value import expected_value, is_value_bet
 from puntboom.config import settings
 from puntboom.database import async_session
-from puntboom.ml.predictor import SportPredictor, TotalsPredictor
+from puntboom.ml.predictor import SportPredictor, TotalsClassifier, TotalsPredictor
 from puntboom.models.football import FootballLeague, FootballMatch, FootballTeam
 from puntboom.models.basketball import BasketballGame, BasketballTeam
 from puntboom.models.hockey import HockeyGame, HockeyTeam
@@ -45,6 +45,11 @@ async def _predict_football(session: AsyncSession) -> None:
     has_totals = totals_predictor.load()
     if not has_totals:
         logger.warning("No football totals model — O/U predictions will be skipped")
+
+    totals_classifier = TotalsClassifier("football")
+    has_classifier = totals_classifier.load()
+    if not has_classifier:
+        logger.info("No football O/U classifier — falling back to Poisson CDF")
 
     now = datetime.now(timezone.utc)
     lookahead = now + timedelta(days=14)
@@ -92,10 +97,15 @@ async def _predict_football(session: AsyncSession) -> None:
             if not probs:
                 continue
 
-            # Totals prediction
+            # Totals: use regression for xGoals, classifier for O/U probs
             totals = None
             if has_totals:
                 totals = totals_predictor.predict(features)
+            if has_classifier and totals:
+                cls_pred = totals_classifier.predict(features)
+                if cls_pred:
+                    totals["prob_over"] = cls_pred["prob_over"]
+                    totals["prob_under"] = cls_pred["prob_under"]
 
             # Look up league name
             league_name = None
@@ -191,6 +201,11 @@ async def _predict_hockey(session: AsyncSession) -> None:
     if not has_totals:
         logger.warning("No hockey totals model — O/U predictions will be skipped")
 
+    totals_classifier = TotalsClassifier("hockey")
+    has_classifier = totals_classifier.load()
+    if not has_classifier:
+        logger.info("No hockey O/U classifier — falling back to Poisson CDF")
+
     now = datetime.now(timezone.utc)
     lookahead = now + timedelta(days=14)
     result = await session.execute(
@@ -240,6 +255,11 @@ async def _predict_hockey(session: AsyncSession) -> None:
             totals = None
             if has_totals:
                 totals = totals_predictor.predict(features, line=5.5)
+            if has_classifier and totals:
+                cls_pred = totals_classifier.predict(features)
+                if cls_pred:
+                    totals["prob_over"] = cls_pred["prob_over"]
+                    totals["prob_under"] = cls_pred["prob_under"]
 
             # Derive league name: euro games store tournament name in season,
             # NHL games store year like "20262027"
