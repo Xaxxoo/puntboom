@@ -5,6 +5,7 @@ import logging
 from puntboom.collectors.football import FootballCollector
 from puntboom.collectors.basketball import BasketballCollector
 from puntboom.collectors.hockey import HockeyCollector
+from puntboom.collectors.euro_hockey import EuroHockeyCollector
 from puntboom.collectors.tennis import TennisCollector
 from puntboom.collectors.odds import OddsCollector
 from puntboom.database import async_session
@@ -21,6 +22,7 @@ async def collect_all_data() -> None:
             ("football", FootballCollector()),
             ("basketball", BasketballCollector()),
             ("hockey", HockeyCollector()),
+            ("euro_hockey", EuroHockeyCollector()),
             ("tennis", TennisCollector()),
             ("odds", OddsCollector()),
         ]
@@ -42,6 +44,7 @@ async def collect_sport(sport: str) -> None:
         "football": FootballCollector,
         "basketball": BasketballCollector,
         "hockey": HockeyCollector,
+        "euro_hockey": EuroHockeyCollector,
         "tennis": TennisCollector,
         "odds": OddsCollector,
     }

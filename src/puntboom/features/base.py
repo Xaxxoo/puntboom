@@ -55,7 +55,10 @@ def rest_days(last_game_date: datetime | None, current_date: datetime) -> int:
     """Calculate days since last game."""
     if last_game_date is None:
         return 7  # Default assumption
-    delta = current_date - last_game_date
+    # Strip timezone info to avoid naive/aware mismatch
+    a = last_game_date.replace(tzinfo=None) if last_game_date.tzinfo else last_game_date
+    b = current_date.replace(tzinfo=None) if current_date.tzinfo else current_date
+    delta = b - a
     return max(0, delta.days)
 
 
