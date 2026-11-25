@@ -10,6 +10,9 @@ from puntboom.features.base import (
     build_base_features,
     implied_probability,
     goals_scored_avg,
+    over_pct,
+    consecutive_over_streak,
+    total_goals_avg,
 )
 from puntboom.features.elo import EloRatingSystem
 from puntboom.models.football import FootballMatch, FootballTeam
@@ -132,6 +135,46 @@ async def build_football_features(
     features["home_home_goals_avg"] = goals_scored_avg(h_sc, 5)
     features["away_away_goals_avg"] = goals_scored_avg(a_sc, 5)
 
+    # --- Halftime features (6) ---
+    home_ht, home_sh = _halftime_scoring_for_team(home_history, home_team.id)
+    away_ht, away_sh = _halftime_scoring_for_team(away_history, away_team.id)
+    features["home_ht_goals_avg"] = sum(home_ht) / max(len(home_ht), 1)
+    features["away_ht_goals_avg"] = sum(away_ht) / max(len(away_ht), 1)
+    features["home_sh_goals_avg"] = sum(home_sh) / max(len(home_sh), 1)
+    features["away_sh_goals_avg"] = sum(away_sh) / max(len(away_sh), 1)
+    # Total (team + opponent) halftime goals per game
+    home_ht_totals = _halftime_total_for_team(home_history)
+    away_ht_totals = _halftime_total_for_team(away_history)
+    features["home_ht_total_avg"] = sum(home_ht_totals) / max(len(home_ht_totals), 1)
+    features["away_ht_total_avg"] = sum(away_ht_totals) / max(len(away_ht_totals), 1)
+
+    # --- Multi-threshold over percentages (5) ---
+    features["home_over15_pct"] = over_pct(home_scored, home_conceded, 1.5)
+    features["away_over15_pct"] = over_pct(away_scored, away_conceded, 1.5)
+    features["home_over35_pct"] = over_pct(home_scored, home_conceded, 3.5)
+    features["away_over35_pct"] = over_pct(away_scored, away_conceded, 3.5)
+    features["combined_over25_pct"] = (
+        over_pct(home_scored, home_conceded, 2.5)
+        + over_pct(away_scored, away_conceded, 2.5)
+    ) / 2.0
+
+    # --- Over 2.5 streaks (2) ---
+    features["home_over25_streak"] = float(
+        consecutive_over_streak(home_scored, home_conceded, 2.5)
+    )
+    features["away_over25_streak"] = float(
+        consecutive_over_streak(away_scored, away_conceded, 2.5)
+    )
+
+    # --- H2H totals (2) ---
+    h2h_avg, h2h_o25 = _h2h_total_goals(h2h_matches)
+    features["h2h_avg_total"] = h2h_avg
+    features["h2h_over25_pct"] = h2h_o25
+
+    # --- Close games (2) ---
+    features["home_one_goal_game_pct"] = _one_goal_game_pct(home_history)
+    features["away_one_goal_game_pct"] = _one_goal_game_pct(away_history)
+
     # Odds-implied probabilities
     if odds_home and odds_home > 0:
         features["implied_prob_home"] = implied_probability(odds_home)
@@ -181,3 +224,63 @@ def _clean_sheet_pct(matches: list[FootballMatch], team_id: int) -> float:
         elif m.away_team_id == team_id and m.home_score == 0:
             clean += 1
     return clean / len(finished)
+
+
+def _halftime_scoring_for_team(
+    matches: list[FootballMatch], team_id: int
+) -> tuple[list[int], list[int]]:
+    """Extract 1st-half and 2nd-half goals for a team.
+
+    Returns (ht_goals, sh_goals) lists.
+    """
+    ht_goals: list[int] = []
+    sh_goals: list[int] = []
+    for m in matches:
+        if m.home_ht_score is None or m.away_ht_score is None:
+            continue
+        if m.home_score is None or m.away_score is None:
+            continue
+        if m.home_team_id == team_id:
+            ht_goals.append(m.home_ht_score)
+            sh_goals.append(m.home_score - m.home_ht_score)
+        elif m.away_team_id == team_id:
+            ht_goals.append(m.away_ht_score)
+            sh_goals.append(m.away_score - m.away_ht_score)
+    return ht_goals, sh_goals
+
+
+def _halftime_total_for_team(matches: list[FootballMatch]) -> list[int]:
+    """Total halftime goals (both teams) per match."""
+    totals: list[int] = []
+    for m in matches:
+        if m.home_ht_score is not None and m.away_ht_score is not None:
+            totals.append(m.home_ht_score + m.away_ht_score)
+    return totals
+
+
+def _h2h_total_goals(
+    h2h_matches: list[FootballMatch],
+) -> tuple[float, float]:
+    """Average total goals and over-2.5 rate in H2H matches."""
+    finished = [
+        m for m in h2h_matches
+        if m.home_score is not None and m.away_score is not None
+    ]
+    if not finished:
+        return 2.5, 0.5  # neutral defaults
+    totals = [m.home_score + m.away_score for m in finished]
+    avg = sum(totals) / len(totals)
+    o25 = sum(1 for t in totals if t > 2.5) / len(totals)
+    return avg, o25
+
+
+def _one_goal_game_pct(matches: list[FootballMatch]) -> float:
+    """Percentage of games decided by <= 1 goal."""
+    finished = [
+        m for m in matches
+        if m.home_score is not None and m.away_score is not None
+    ]
+    if not finished:
+        return 0.5
+    close = sum(1 for m in finished if abs(m.home_score - m.away_score) <= 1)
+    return close / len(finished)

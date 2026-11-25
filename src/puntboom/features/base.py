@@ -1,9 +1,88 @@
 """Shared feature engineering utilities."""
 
 from datetime import datetime, timedelta, timezone
+from statistics import stdev
 
 import numpy as np
 import pandas as pd
+
+
+# ---------------------------------------------------------------------------
+# Totals-oriented helper functions
+# ---------------------------------------------------------------------------
+
+
+def scoring_std_dev(scores: list[int], window: int = 10) -> float:
+    """Standard deviation of scores over last N games."""
+    if len(scores) < 2:
+        return 0.0
+    recent = scores[-window:]
+    if len(recent) < 2:
+        return 0.0
+    return stdev(recent)
+
+
+def scoring_cv(scores: list[int], window: int = 10) -> float:
+    """Coefficient of variation (std/mean) of scores over last N games."""
+    if len(scores) < 2:
+        return 0.0
+    recent = scores[-window:]
+    if len(recent) < 2:
+        return 0.0
+    mean = sum(recent) / len(recent)
+    if mean == 0:
+        return 0.0
+    return stdev(recent) / mean
+
+
+def over_pct(
+    scored: list[int], conceded: list[int], threshold: float, window: int = 10
+) -> float:
+    """Percentage of recent games where total goals exceeded threshold."""
+    if not scored or not conceded:
+        return 0.5
+    n = min(len(scored), len(conceded), window)
+    recent_scored = scored[-n:]
+    recent_conceded = conceded[-n:]
+    over = sum(
+        1 for s, c in zip(recent_scored, recent_conceded) if (s + c) > threshold
+    )
+    return over / n
+
+
+def total_goals_avg(
+    scored: list[int], conceded: list[int], window: int = 10
+) -> float:
+    """Average total goals per game over recent games."""
+    if not scored or not conceded:
+        return 0.0
+    n = min(len(scored), len(conceded), window)
+    recent_scored = scored[-n:]
+    recent_conceded = conceded[-n:]
+    return sum(s + c for s, c in zip(recent_scored, recent_conceded)) / n
+
+
+def consecutive_over_streak(
+    scored: list[int], conceded: list[int], threshold: float
+) -> int:
+    """Current over/under streak. Positive = consecutive overs, negative = unders."""
+    if not scored or not conceded:
+        return 0
+    n = min(len(scored), len(conceded))
+    count = 0
+    last_over = (scored[-1] + conceded[-1]) > threshold
+    for s, c in zip(reversed(scored[-n:]), reversed(conceded[-n:])):
+        is_over = (s + c) > threshold
+        if is_over == last_over:
+            count += 1
+        else:
+            break
+    return count if last_over else -count
+
+
+# ---------------------------------------------------------------------------
+# Existing helpers
+# ---------------------------------------------------------------------------
 
 
 def rolling_win_pct(
@@ -141,5 +220,32 @@ def build_base_features(
     else:
         features["h2h_win_pct"] = 0.5
         features["h2h_draw_pct"] = 0.0
+
+    # --- Volatility features (6) ---
+    features["home_goals_std"] = scoring_std_dev(team_scores)
+    features["away_goals_std"] = scoring_std_dev(opp_scores)
+    features["home_conceded_std"] = scoring_std_dev(team_conceded)
+    features["away_conceded_std"] = scoring_std_dev(opp_conceded)
+    features["home_goals_cv"] = scoring_cv(team_scores)
+    features["away_goals_cv"] = scoring_cv(opp_scores)
+
+    # --- Interaction features (5) ---
+    home_avg = goals_scored_avg(team_scores)
+    away_avg = goals_scored_avg(opp_scores)
+    home_conc = goals_conceded_avg(team_conceded)
+    away_conc = goals_conceded_avg(opp_conceded)
+    features["combined_goals_avg"] = home_avg + away_avg
+    features["combined_conceded_avg"] = home_conc + away_conc
+    features["expected_total"] = (home_avg + away_conc + away_avg + home_conc) / 2.0
+    features["attack_vs_defense_home"] = home_avg - away_conc  # negative = strong defense
+    features["attack_vs_defense_away"] = away_avg - home_conc
+
+    # --- Per-team totals (2) ---
+    features["home_total_per_game"] = total_goals_avg(team_scores, team_conceded)
+    features["away_total_per_game"] = total_goals_avg(opp_scores, opp_conceded)
+
+    # --- Goal difference (2) ---
+    features["home_goal_diff_avg"] = home_avg - home_conc
+    features["away_goal_diff_avg"] = away_avg - away_conc
 
     return features
