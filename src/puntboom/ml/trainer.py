@@ -294,18 +294,24 @@ def train_totals_model(
     }
 
 
-def _build_classifier_models() -> dict:
-    """Build candidate binary classifiers for O/U prediction."""
+def _build_classifier_models(over_rate: float = 0.5) -> dict:
+    """Build candidate binary classifiers for O/U prediction.
+
+    Uses balanced class weights so models don't collapse to the base rate.
+    """
     models = {
-        "logistic": LogisticRegression(max_iter=1000),
+        "logistic": LogisticRegression(max_iter=1000, class_weight="balanced"),
     }
     if XGBClassifier is not None:
+        # scale_pos_weight = n_negative / n_positive
+        spw = (1 - over_rate) / max(over_rate, 0.01)
         models["xgboost"] = XGBClassifier(
             n_estimators=200,
             max_depth=6,
             learning_rate=0.1,
             objective="binary:logistic",
             eval_metric="logloss",
+            scale_pos_weight=spw,
             verbosity=0,
         )
     if LGBMClassifier is not None:
@@ -314,6 +320,7 @@ def _build_classifier_models() -> dict:
             max_depth=6,
             learning_rate=0.1,
             objective="binary",
+            is_unbalance=True,
             verbose=-1,
         )
     return models
@@ -348,6 +355,7 @@ def train_totals_classifier(
         return {"sport": sport, "error": "insufficient_data", "samples": len(X)}
 
     X = X.fillna(0)
+    over_rate = float(y.mean())
 
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
@@ -355,7 +363,7 @@ def train_totals_classifier(
     n_splits = min(5, max(2, len(X) // 20))
     tscv = TimeSeriesSplit(n_splits=n_splits)
 
-    candidate_models = _build_classifier_models()
+    candidate_models = _build_classifier_models(over_rate)
     best_name = None
     best_score = float("inf")
     best_model = None
@@ -384,41 +392,64 @@ def train_totals_classifier(
     if best_model is None:
         return {"sport": sport, "error": "all_models_failed"}
 
+    # Collect out-of-fold predictions from the best model for threshold tuning
+    oof_proba = np.full(len(X_scaled), np.nan)
+    for train_idx, val_idx in tscv.split(X_scaled):
+        best_model.fit(X_scaled[train_idx], y.iloc[train_idx])
+        oof_proba[val_idx] = best_model.predict_proba(X_scaled[val_idx])[:, 1]
+    oof_mask = ~np.isnan(oof_proba)
+
+    # Find the decision threshold where the predicted Over rate matches
+    # the actual Over rate.  This prevents the model from collapsing to
+    # "always predict Over" (which pure accuracy-maximisation tends to do
+    # when probabilities are compressed near the base rate).
+    actual_over_rate = float(y.values[oof_mask].mean())
+    best_threshold = float(np.percentile(oof_proba[oof_mask], (1 - actual_over_rate) * 100))
+    best_threshold = round(best_threshold, 3)
+
+    # Measure accuracy at this rate-matched threshold
+    oof_preds = (oof_proba[oof_mask] >= best_threshold).astype(int)
+    threshold_acc = accuracy_score(y.values[oof_mask], oof_preds)
+    pred_rate = float(oof_preds.mean())
+    logger.info(
+        f"{sport}_totals_cls: threshold={best_threshold:.3f} "
+        f"(OOF accuracy={threshold_acc:.4f}, pred_over={pred_rate:.3f}, "
+        f"actual_over={actual_over_rate:.3f})"
+    )
+
     # Retrain best on all data
     best_model.fit(X_scaled, y)
 
-    # Calibrate probabilities
-    calibrated = CalibratedClassifierCV(best_model, cv=3, method="isotonic")
-    try:
-        calibrated.fit(X_scaled, y)
-        final_model = calibrated
-    except Exception:
-        logger.warning(f"Calibration failed for {sport} O/U classifier, using uncalibrated")
-        final_model = best_model
+    # Skip probability calibration for the O/U classifier.
+    # With balanced class weights the raw model spreads probabilities
+    # across a useful range (e.g. 0.35–0.83).  Calibration (isotonic or
+    # sigmoid) compresses them back toward the base rate (~0.55),
+    # destroying the model's ability to discriminate.  Instead we rely on
+    # the optimised decision threshold found above.
+    final_model = best_model
 
-    # Save artifacts
+    # Save artifacts (include threshold in meta)
+    meta = {
+        "feature_names": list(features_df.columns),
+        "line": line,
+        "threshold": best_threshold,
+    }
     version = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     joblib.dump(final_model, model_dir / f"totals_cls_model_{version}.joblib")
     joblib.dump(scaler, model_dir / f"totals_cls_scaler_{version}.joblib")
-    joblib.dump(
-        {"feature_names": list(features_df.columns), "line": line},
-        model_dir / f"totals_cls_meta_{version}.joblib",
-    )
+    joblib.dump(meta, model_dir / f"totals_cls_meta_{version}.joblib")
 
     # Also save as "latest"
     joblib.dump(final_model, model_dir / "totals_cls_model_latest.joblib")
     joblib.dump(scaler, model_dir / "totals_cls_scaler_latest.joblib")
-    joblib.dump(
-        {"feature_names": list(features_df.columns), "line": line},
-        model_dir / "totals_cls_meta_latest.joblib",
-    )
+    joblib.dump(meta, model_dir / "totals_cls_meta_latest.joblib")
 
-    # Final evaluation
+    # Final evaluation using optimal threshold
     final_proba = final_model.predict_proba(X_scaled)[:, 1]
-    final_preds = (final_proba >= 0.5).astype(int)
+    final_preds = (final_proba >= best_threshold).astype(int)
     final_brier = brier_score_loss(y, final_proba)
     final_acc = accuracy_score(y, final_preds)
-    over_rate = float(y.mean())
+    pred_over_rate = float(final_preds.mean())
 
     return {
         "sport": sport,
@@ -431,6 +462,8 @@ def train_totals_classifier(
             "brier_score": float(final_brier),
             "accuracy": float(final_acc),
             "over_rate": over_rate,
+            "pred_over_rate": pred_over_rate,
+            "threshold": best_threshold,
         },
         "cv_results": {k: {"avg_brier": v["avg_brier"]} for k, v in results.items()},
     }

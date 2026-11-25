@@ -186,10 +186,18 @@ class TotalsClassifier:
     def feature_names(self) -> list[str]:
         return self.meta["feature_names"] if self.meta else []
 
+    @property
+    def threshold(self) -> float:
+        """Optimal decision threshold from training (defaults to 0.5)."""
+        if self.meta and "threshold" in self.meta:
+            return self.meta["threshold"]
+        return 0.5
+
     def predict(self, features: dict[str, float]) -> dict[str, float] | None:
         """Predict O/U probabilities for a single match.
 
-        Returns dict with 'prob_over' and 'prob_under'.
+        Returns dict with 'prob_over', 'prob_under', 'prediction', 'threshold'.
+        Uses the optimal threshold determined during training.
         """
         if not self._loaded:
             if not self.load():
@@ -203,10 +211,14 @@ class TotalsClassifier:
         # Classes are [0=Under, 1=Over]
         prob_over = float(proba[1])
         prob_under = float(proba[0])
+        t = self.threshold
+        prediction = "Over" if prob_over >= t else "Under"
 
         return {
             "prob_over": round(prob_over, 3),
             "prob_under": round(prob_under, 3),
+            "prediction": prediction,
+            "threshold": t,
         }
 
 

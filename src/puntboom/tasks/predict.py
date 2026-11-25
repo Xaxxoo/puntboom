@@ -106,6 +106,7 @@ async def _predict_football(session: AsyncSession) -> None:
                 if cls_pred:
                     totals["prob_over"] = cls_pred["prob_over"]
                     totals["prob_under"] = cls_pred["prob_under"]
+                    totals["prediction"] = cls_pred["prediction"]
 
             # Look up league name
             league_name = None
@@ -260,6 +261,7 @@ async def _predict_hockey(session: AsyncSession) -> None:
                 if cls_pred:
                     totals["prob_over"] = cls_pred["prob_over"]
                     totals["prob_under"] = cls_pred["prob_under"]
+                    totals["prediction"] = cls_pred["prediction"]
 
             # Derive league name: euro games store tournament name in season,
             # NHL games store year like "20262027"
@@ -402,7 +404,11 @@ def _save_prediction(
         total_line = total_line_override if total_line_override is not None else 2.5
         prob_over = totals.get("prob_over")
         prob_under = totals.get("prob_under")
-        predicted_total = "Over" if (prob_over or 0) >= 0.5 else "Under"
+        # Use classifier's threshold-aware prediction if available,
+        # otherwise fall back to 0.5
+        predicted_total = totals.get(
+            "prediction", "Over" if (prob_over or 0) >= 0.5 else "Under"
+        )
 
     prediction = Prediction(
         sport=sport,
