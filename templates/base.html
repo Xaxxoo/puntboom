@@ -78,6 +78,35 @@
     </footer>
 
     <script src="/static/js/charts.js"></script>
+    <script>
+    // Convert UTC times to the user's local timezone
+    document.addEventListener('DOMContentLoaded', function() {
+        document.querySelectorAll('.local-time').forEach(function(el) {
+            var utc = el.dataset.utc;
+            if (!utc) return;
+            // Ensure the string is treated as UTC if no offset present
+            if (!/[Z+\-]\d/.test(utc)) utc += 'Z';
+            var d = new Date(utc);
+            if (isNaN(d)) return;
+            var fmt = el.dataset.format || 'datetime';
+            var pad = function(n) { return n < 10 ? '0' + n : n; };
+            var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            var days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+            var time = pad(d.getHours()) + ':' + pad(d.getMinutes());
+            var date = pad(d.getMonth()+1) + '/' + pad(d.getDate());
+            var fullDate = d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate());
+            if (fmt === 'time') {
+                el.textContent = time;
+            } else if (fmt === 'date') {
+                el.textContent = date;
+            } else if (fmt === 'date-time') {
+                el.innerHTML = days[d.getDay()] + ' ' + pad(d.getDate()) + '<br>' + time;
+            } else {
+                el.textContent = fullDate + ' ' + time;
+            }
+        });
+    });
+    </script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

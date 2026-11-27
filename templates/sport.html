@@ -33,7 +33,7 @@
                 {% for pred in upcoming %}
                 <tr class="border-b border-gray-800/50 hover:bg-gray-800/30">
                     <td class="py-3 px-2">{{ pred.home_team }} vs {{ pred.away_team }}</td>
-                    <td class="py-3 px-2 text-gray-400">{{ pred.match_date.strftime('%m/%d %H:%M') if pred.match_date else 'TBD' }}</td>
+                    <td class="py-3 px-2 text-gray-400 local-time" data-utc="{{ pred.match_date.isoformat() if pred.match_date else '' }}">{{ pred.match_date.strftime('%m/%d %H:%M') if pred.match_date else 'TBD' }}</td>
                     <td class="py-3 px-2 text-center font-mono">{{ "%.1f" | format(pred.prob_home * 100) }}%</td>
                     {% if sport.key == 'football' %}
                     <td class="py-3 px-2 text-center font-mono">{{ "%.1f" | format((pred.prob_draw or 0) * 100) }}%</td>
@@ -96,7 +96,7 @@
                 {% for pred in recent %}
                 <tr class="border-b border-gray-800/50 hover:bg-gray-800/30">
                     <td class="py-3 px-2">{{ pred.home_team }} vs {{ pred.away_team }}</td>
-                    <td class="py-3 px-2 text-gray-400">{{ pred.match_date.strftime('%m/%d') if pred.match_date else '' }}</td>
+                    <td class="py-3 px-2 text-gray-400 local-time" data-utc="{{ pred.match_date.isoformat() if pred.match_date else '' }}" data-format="date">{{ pred.match_date.strftime('%m/%d') if pred.match_date else '' }}</td>
                     <td class="py-3 px-2 text-center font-mono">{{ pred.predicted_outcome }}</td>
                     <td class="py-3 px-2 text-center font-mono">{{ pred.actual_outcome or '-' }}</td>
                     <td class="py-3 px-2 text-center">

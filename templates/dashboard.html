@@ -61,7 +61,7 @@
                 <tr class="border-b border-gray-800/50 hover:bg-gray-800/30">
                     <td class="py-3 px-2 capitalize">{{ bet.sport }}</td>
                     <td class="py-3 px-2">{{ bet.home_team }} vs {{ bet.away_team }}</td>
-                    <td class="py-3 px-2 text-gray-400">{{ bet.match_date.strftime('%Y-%m-%d %H:%M') if bet.match_date else 'TBD' }}</td>
+                    <td class="py-3 px-2 text-gray-400 local-time" data-utc="{{ bet.match_date.isoformat() if bet.match_date else '' }}">{{ bet.match_date.strftime('%Y-%m-%d %H:%M') if bet.match_date else 'TBD' }}</td>
                     <td class="py-3 px-2">
                         <span class="px-2 py-1 rounded text-xs font-medium
                             {% if bet.predicted_outcome in ['H', '1'] %}bg-blue-500/20 text-blue-400

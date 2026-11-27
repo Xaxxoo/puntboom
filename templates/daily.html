@@ -18,7 +18,7 @@
     data-xgoals="{{ pred.expected_goals or 0 }}"
     data-league="{{ pred.league or '' }}">
     <td class="py-3 px-2 font-mono text-gray-400 text-xs whitespace-nowrap">
-        {% if show_date %}{{ pred.match_date.strftime('%a %d') }}<br>{% endif %}{{ pred.match_date.strftime('%H:%M') if pred.match_date else 'TBD' }}
+        <span class="local-time" data-utc="{{ pred.match_date.isoformat() if pred.match_date else '' }}" data-format="{% if show_date %}date-time{% else %}time{% endif %}">{% if show_date %}{{ pred.match_date.strftime('%a %d') }}<br>{% endif %}{{ pred.match_date.strftime('%H:%M') if pred.match_date else 'TBD' }}</span>
     </td>
     <td class="py-3 px-2">
         <div class="flex items-center gap-1 flex-wrap">
